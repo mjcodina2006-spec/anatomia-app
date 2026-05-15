@@ -1,0 +1,13 @@
+
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/claude.js", "use": "@vercel/node" },
+    { "src": "build/**", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/claude", "dest": "api/claude.js" },
+    { "src": "/static/(.*)", "dest": "build/static/$1" },
+    { "src": "/(.*)", "dest": "build/index.html" }
+  ]
+}
