@@ -798,11 +798,10 @@ function Historial({dark,exams,setExams}){
   );
 }
 
-// ── PLANIFICADOR ──────────────────────────────────────────
+
 function Planificador({dark,agendaItems,setAgendaItems}){
   const s=useS(dark);
   const [view,setView]=useState("dia");
-  const [selDay,setSelDay]=useState(1);
   const [selMonth,setSelMonth]=useState(4);
   const [editing,setEditing]=useState(null);
   const [editText,setEditText]=useState("");
@@ -810,18 +809,59 @@ function Planificador({dark,agendaItems,setAgendaItems}){
   const [editHour,setEditHour]=useState("08:00");
   const colorOpts=[P.accent,P.success,P.danger,P.warn,P.purple,"#5A7AB8"];
 
-  function getItems(dayIdx,hour){ return agendaItems.filter(it=>(DAYS_SHORT.indexOf(it.day)===dayIdx-1||(it.dayIdx!==undefined&&it.dayIdx===dayIdx))&&it.hora===hour); }
-  function openNew(dayIdx,hour){ setEditing({new:true,dayIdx,hour});setEditText("");setEditColor(P.accent);setEditHour(hour); }
-  function openEdit(item){ setEditing({...item,existing:true});setEditText(item.text);setEditColor(item.color||P.accent);setEditHour(item.hora); }
+  // Fecha base: 11 mayo 2026
+  const BASE = new Date(2026, 4, 11); // mes 4 = mayo
+  const END = new Date(2027, 0, 31);  // 31 enero 2027
+
+  const [selDate, setSelDate] = useState(new Date(2026, 4, 11));
+  const [selWeekStart, setSelWeekStart] = useState(new Date(2026, 4, 11));
+
+  const HOURS_ALL = Array.from({length:24},(_,i)=>`${i.toString().padStart(2,"0")}:00`);
+
+  function formatDate(d){
+    return `${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}`;
+  }
+  function formatDateFull(d){
+    return `${DAYS_SHORT[d.getDay()===0?6:d.getDay()-1]} ${formatDate(d)}`;
+  }
+  function addDays(d, n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+  function sameDay(a,b){ return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
+
+  function getItemsForDateHour(date, hour){
+    return agendaItems.filter(it=>{
+      if(it.fecha){
+        const [y,m,dd]=it.fecha.split("-").map(Number);
+        const itDate=new Date(y,m-1,dd);
+        return sameDay(itDate,date)&&it.hora===hour;
+      }
+      return false;
+    });
+  }
+
+  function openNew(date, hour){
+    setEditing({new:true, date, hour});
+    setEditText(""); setEditColor(P.accent); setEditHour(hour);
+  }
+  function openEdit(item){
+    setEditing({...item,existing:true});
+    setEditText(item.text); setEditColor(item.color||P.accent); setEditHour(item.hora);
+  }
   function saveEdit(){
-    if(editing.existing){setAgendaItems(prev=>prev.map(it=>it.id===editing.id?{...it,text:editText.trim(),color:editColor,hora:editHour}:it));}
-    else if(editText.trim()){setAgendaItems(prev=>[...prev,{id:`ev_${Date.now()}`,text:editText.trim(),day:DAYS_SHORT[editing.dayIdx-1],dayIdx:editing.dayIdx,hora:editHour,color:editColor}]);}
+    const dateStr = editing.date ? `${editing.date.getFullYear()}-${(editing.date.getMonth()+1).toString().padStart(2,"0")}-${editing.date.getDate().toString().padStart(2,"0")}` : editing.fecha;
+    if(editing.existing){
+      setAgendaItems(prev=>prev.map(it=>it.id===editing.id?{...it,text:editText.trim(),color:editColor,hora:editHour}:it));
+    } else if(editText.trim()){
+      setAgendaItems(prev=>[...prev,{id:`ev_${Date.now()}`,text:editText.trim(),fecha:dateStr,hora:editHour,color:editColor}]);
+    }
     setEditing(null);
   }
   function remove(id){ setAgendaItems(prev=>prev.filter(it=>it.id!==id)); }
 
   const firstDay=firstDayOfMonth(selMonth);
   const totalDays=daysInMonth(selMonth);
+
+  // Week dates
+  const weekDates = Array.from({length:7},(_,i)=>addDays(selWeekStart,i));
 
   return(
     <div style={{padding:"13px 13px 28px",background:s.bg,minHeight:"100%"}}>
@@ -832,26 +872,31 @@ function Planificador({dark,agendaItems,setAgendaItems}){
         ))}
       </div>
 
+      {/* VISTA DÍA */}
       {view==="dia"&&(
         <div>
-          <div style={{display:"flex",gap:4,marginBottom:12,overflowX:"auto"}}>
-            {DAYS_SHORT.map((d,i)=>(
-              <button key={d} onClick={()=>setSelDay(i+1)} style={{flexShrink:0,background:selDay===i+1?P.accent:"transparent",color:selDay===i+1?"#fff":s.muted,border:`0.5px solid ${selDay===i+1?P.accent:s.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:11,fontWeight:selDay===i+1?500:400}}>{d}</button>
-            ))}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            <button onClick={()=>setSelDate(d=>{const r=addDays(d,-1);return r<BASE?BASE:r;})} style={{background:"transparent",border:`0.5px solid ${s.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer",color:s.text}}>←</button>
+            <span style={{fontWeight:500,color:s.text,flex:1,textAlign:"center",fontSize:15}}>{formatDateFull(selDate)}</span>
+            <button onClick={()=>setSelDate(d=>{const r=addDays(d,1);return r>END?END:r;})} style={{background:"transparent",border:`0.5px solid ${s.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer",color:s.text}}>→</button>
           </div>
-          {HOURS.map(h=>{
-            const items=getItems(selDay,h);
+          {HOURS_ALL.map(h=>{
+            const items=getItemsForDateHour(selDate,h);
             return(
               <div key={h} style={{display:"flex",gap:7,marginBottom:6}}>
                 <span style={{fontSize:10,color:s.muted,width:40,flexShrink:0,paddingTop:12}}>{h}</span>
                 <div style={{flex:1,display:"flex",flexDirection:"column",gap:3}}>
-                  {items.length===0?<div onClick={()=>openNew(selDay,h)} style={{minHeight:38,background:s.card,border:`0.5px solid ${s.border}`,borderRadius:9,padding:"9px 12px",cursor:"pointer",display:"flex",alignItems:"center"}}><span style={{fontSize:11,color:s.muted}}>+ agregar</span></div>:items.map(item=>(
+                  {items.length===0?(
+                    <div onClick={()=>openNew(selDate,h)} style={{minHeight:38,background:s.card,border:`0.5px solid ${s.border}`,borderRadius:9,padding:"9px 12px",cursor:"pointer",display:"flex",alignItems:"center"}}>
+                      <span style={{fontSize:11,color:s.muted}}>+ agregar</span>
+                    </div>
+                  ):items.map(item=>(
                     <div key={item.id} onClick={()=>openEdit(item)} style={{minHeight:38,background:item.color+"22",border:`0.5px solid ${item.color}88`,borderRadius:9,padding:"9px 12px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                       <span style={{fontSize:12,color:item.color,fontWeight:500}}>{item.text}</span>
                       <button onClick={e=>{e.stopPropagation();remove(item.id);}} style={{background:"transparent",border:"none",color:s.muted,cursor:"pointer",fontSize:15,padding:2}}>×</button>
                     </div>
                   ))}
-                  {items.length>0&&<div onClick={()=>openNew(selDay,h)} style={{height:24,background:"transparent",border:`0.5px dashed ${s.border}`,borderRadius:7,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,color:s.muted}}>+ otro</span></div>}
+                  {items.length>0&&<div onClick={()=>openNew(selDate,h)} style={{height:24,background:"transparent",border:`0.5px dashed ${s.border}`,borderRadius:7,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,color:s.muted}}>+ otro</span></div>}
                 </div>
               </div>
             );
@@ -859,26 +904,40 @@ function Planificador({dark,agendaItems,setAgendaItems}){
         </div>
       )}
 
+      {/* VISTA SEMANA */}
       {view==="semana"&&(
         <div>
-          <div style={{display:"grid",gridTemplateColumns:`40px repeat(7,1fr)`,gap:"2px 3px",marginBottom:5}}>
-            <div/>{DAYS_SHORT.map((d,i)=><div key={d} onClick={()=>{setSelDay(i+1);setView("dia");}} style={{textAlign:"center",fontSize:10,color:selDay===i+1?P.accent:s.muted,fontWeight:selDay===i+1?500:400,paddingBottom:4,cursor:"pointer"}}>{d}</div>)}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <button onClick={()=>setSelWeekStart(d=>{const r=addDays(d,-7);return r<BASE?BASE:r;})} style={{background:"transparent",border:`0.5px solid ${s.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer",color:s.text}}>←</button>
+            <span style={{fontWeight:500,color:s.text,flex:1,textAlign:"center",fontSize:13}}>{formatDate(selWeekStart)} — {formatDate(addDays(selWeekStart,6))}</span>
+            <button onClick={()=>setSelWeekStart(d=>{const r=addDays(d,7);return r>END?d:r;})} style={{background:"transparent",border:`0.5px solid ${s.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer",color:s.text}}>→</button>
           </div>
-          {HOURS.slice(0,9).map(h=>(
+          <div style={{display:"grid",gridTemplateColumns:`40px repeat(7,1fr)`,gap:"2px 3px",marginBottom:5}}>
+            <div/>
+            {weekDates.map((d,i)=>(
+              <div key={i} onClick={()=>{setSelDate(d);setView("dia");}} style={{textAlign:"center",fontSize:10,color:sameDay(d,selDate)?P.accent:s.muted,fontWeight:sameDay(d,selDate)?500:400,paddingBottom:4,cursor:"pointer"}}>
+                {DAYS_SHORT[i]}<br/><span style={{fontSize:9}}>{formatDate(d)}</span>
+              </div>
+            ))}
+          </div>
+          {HOURS_ALL.slice(7,22).map(h=>(
             <div key={h} style={{display:"grid",gridTemplateColumns:`40px repeat(7,1fr)`,gap:"2px 3px",marginBottom:3}}>
               <span style={{fontSize:9,color:s.muted,paddingTop:4}}>{h}</span>
-              {DAYS_SHORT.map((_,di)=>{
-                const items=getItems(di+1,h);
+              {weekDates.map((d,di)=>{
+                const items=getItemsForDateHour(d,h);
                 const ev=items[0];
-                return<div key={di} onClick={()=>{setSelDay(di+1);setView("dia");}} style={{minHeight:28,background:ev?(ev.color+"33"):(dark?"#2E2218":P.beigeDeep+"88"),border:`0.5px solid ${ev?(ev.color+"55"):s.border}`,borderRadius:4,cursor:"pointer",padding:ev?"2px 3px":0,display:"flex",alignItems:"center"}}>
-                  {ev&&<span style={{fontSize:9,color:ev.color,lineHeight:1.2}}>{ev.text.slice(0,10)}</span>}
-                </div>;
+                return(
+                  <div key={di} onClick={()=>{setSelDate(d);setView("dia");}} style={{minHeight:28,background:ev?(ev.color+"33"):(dark?"#2E2218":P.beigeDeep+"88"),border:`0.5px solid ${ev?(ev.color+"55"):s.border}`,borderRadius:4,cursor:"pointer",padding:ev?"2px 3px":0,display:"flex",alignItems:"center"}}>
+                    {ev&&<span style={{fontSize:9,color:ev.color,lineHeight:1.2}}>{ev.text.slice(0,10)}</span>}
+                  </div>
+                );
               })}
             </div>
           ))}
         </div>
       )}
 
+      {/* VISTA MES */}
       {view==="mes"&&(
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
@@ -894,9 +953,13 @@ function Planificador({dark,agendaItems,setAgendaItems}){
             {Array.from({length:totalDays},(_,i)=>{
               const day=i+1;
               const dow=(firstDay+i)%7;
-              const hasEv=agendaItems.some(it=>DAYS_SHORT.indexOf(it.day)===dow);
+              const thisDate=new Date(2026,selMonth,day);
+              const hasEv=agendaItems.some(it=>{
+                if(it.fecha){const[y,m,dd]=it.fecha.split("-").map(Number);return sameDay(new Date(y,m-1,dd),thisDate);}
+                return false;
+              });
               return(
-                <div key={day} onClick={()=>{setSelDay(dow===0?7:dow);setView("dia");}} style={{height:34,background:s.card,border:`0.5px solid ${s.border}`,borderRadius:6,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative"}}>
+                <div key={day} onClick={()=>{setSelDate(thisDate);setView("dia");}} style={{height:34,background:s.card,border:`0.5px solid ${s.border}`,borderRadius:6,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative"}}>
                   <span style={{fontSize:11,color:s.text}}>{day}</span>
                   {hasEv&&<span style={{width:4,height:4,borderRadius:"50%",background:P.accent,position:"absolute",bottom:3}}/>}
                 </div>
@@ -914,7 +977,7 @@ function Planificador({dark,agendaItems,setAgendaItems}){
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:11}}>
               <span style={{fontSize:12,color:s.muted}}>Hora:</span>
               <select value={editHour} onChange={e=>setEditHour(e.target.value)} style={{border:`0.5px solid ${s.border}`,borderRadius:6,padding:"4px 7px",fontSize:12,background:dark?"#241C14":P.cream,color:s.text}}>
-                {HOURS.map(h=><option key={h} value={h}>{h}</option>)}
+                {HOURS_ALL.map(h=><option key={h} value={h}>{h}</option>)}
               </select>
               <div style={{display:"flex",gap:6}}>
                 {colorOpts.map(c=><div key={c} onClick={()=>setEditColor(c)} style={{width:20,height:20,borderRadius:"50%",background:c,border:editColor===c?`2.5px solid ${s.text}`:"2px solid transparent",cursor:"pointer"}}/>)}
@@ -1189,113 +1252,114 @@ export default function App(){
   const [exams,setExams]=useState(INIT_EXAMS);
   const [pts,setPts]=useState(47);
   
+
 const [agendaItems,setAgendaItems]=useState([
-    {id:"p001",text:"Preparación: Revisar cronograma, organizar materiales",day:"Lun",dayIdx:1,hora:"08:00",color:"#7B68C8",fromPlan:true},
-    {id:"p002",text:"PRÁCTICO 20: Macizo facial + Fosas nasales - Guía + Latarjet",day:"Mar",dayIdx:2,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p003",text:"PRÁCTICO 20: Atlas 3D - identificar estructuras",day:"Mar",dayIdx:2,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p004",text:"PRÁCTICO 20: Ver clase Drive + resumen final",day:"Mar",dayIdx:2,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p005",text:"PRÁCTICO 21: Faringe + Espacios perifaríngeos - Guía + Latarjet",day:"Mié",dayIdx:3,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p006",text:"PRÁCTICO 21: Atlas 3D - faringe y espacios",day:"Mié",dayIdx:3,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p007",text:"PRÁCTICO 21: Video Drive + autoevaluación + repaso P20",day:"Mié",dayIdx:3,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p008",text:"PRÁCTICO 22: Aparato masticación + Glándulas salivales",day:"Jue",dayIdx:4,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p009",text:"PRÁCTICO 22: Atlas 3D - músculos masticación, glándulas",day:"Jue",dayIdx:4,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p010",text:"PRÁCTICO 22: Clase Drive + flashcards de músculos y glándulas",day:"Jue",dayIdx:4,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p011",text:"PRÁCTICO 23: Región infrahioidea + PVN - Guía + Latarjet",day:"Vie",dayIdx:5,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p012",text:"PRÁCTICO 23: Atlas 3D - paquete vasculonervioso cuello",day:"Vie",dayIdx:5,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p013",text:"PRÁCTICO 23: Video Drive + repaso rápido P20-21",day:"Vie",dayIdx:5,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p014",text:"PRÁCTICO 24: Laringe + Glándula tiroides - Guía + Latarjet",day:"Lun",dayIdx:1,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p015",text:"PRÁCTICO 24: Atlas 3D - laringe, tiroides y paratiroides",day:"Lun",dayIdx:1,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p016",text:"PRÁCTICO 24: Clase Drive + autoevaluación oral",day:"Lun",dayIdx:1,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p017",text:"REPASO INTEGRADOR: Prácticos 20-24 - mapa conceptual",day:"Mar",dayIdx:2,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p018",text:"REPASO ACTIVO: Atlas 3D cabeza/cuello completo",day:"Mar",dayIdx:2,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p019",text:"REFUERZO: Puntos débiles cabeza/cuello + flashcards",day:"Mar",dayIdx:2,hora:"15:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p020",text:"PRÁCTICO 25: Jaula torácica + Diafragma - Guía + Latarjet",day:"Jue",dayIdx:4,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p021",text:"PRÁCTICO 25: Atlas 3D - jaula torácica y diafragma",day:"Jue",dayIdx:4,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p022",text:"PRÁCTICO 25: Video Drive + tabla orificios diafragmáticos",day:"Jue",dayIdx:4,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p023",text:"PRÁCTICO 26: Tráquea + Árbol bronquial + Pulmones",day:"Vie",dayIdx:5,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p024",text:"PRÁCTICO 26: Atlas 3D - vías respiratorias y segmentos",day:"Vie",dayIdx:5,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p025",text:"PRÁCTICO 26: Clase Drive + tabla pulmón derecho vs izquierdo",day:"Vie",dayIdx:5,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p026",text:"PRÁCTICO 27: Mediastino y Corazón - Guía + Latarjet",day:"Lun",dayIdx:1,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p027",text:"PRÁCTICO 27: Atlas 3D - corazón, grandes vasos, mediastino",day:"Lun",dayIdx:1,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p028",text:"PRÁCTICO 27: Video Drive + recorrido de la sangre",day:"Lun",dayIdx:1,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p029",text:"REPASO INTEGRADOR: Prácticos 25-27 - tórax completo",day:"Mar",dayIdx:2,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p030",text:"REPASO ACTIVO: Atlas 3D tórax completo",day:"Mar",dayIdx:2,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p031",text:"REFUERZO: Puntos débiles tórax + repaso cabeza/cuello",day:"Mar",dayIdx:2,hora:"15:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p032",text:"PRÁCTICO 28: Pared abdominal + Conducto inguinal",day:"Mié",dayIdx:3,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p033",text:"PRÁCTICO 28: Atlas 3D - capas pared abdominal",day:"Mié",dayIdx:3,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p034",text:"PRÁCTICO 28: Clase Drive + tabla conducto inguinal",day:"Mié",dayIdx:3,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p035",text:"PRÁCTICO 29: División abdomen + Peritoneo",day:"Jue",dayIdx:4,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p036",text:"PRÁCTICO 29: Atlas 3D - cavidad peritoneal, mesos, omentos",day:"Jue",dayIdx:4,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p037",text:"PRÁCTICO 29: Video Drive + mapa regiones abdominales",day:"Jue",dayIdx:4,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p038",text:"PRÁCTICO 30: Estómago + Bazo - Guía + Latarjet",day:"Vie",dayIdx:5,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p039",text:"PRÁCTICO 30: Atlas 3D - estómago, bazo, tronco celíaco",day:"Vie",dayIdx:5,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p040",text:"PRÁCTICO 30: Clase Drive + autoevaluación estómago",day:"Vie",dayIdx:5,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p041",text:"PRÁCTICO 31: Duodeno + Páncreas - Guía + Latarjet",day:"Lun",dayIdx:1,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p042",text:"PRÁCTICO 31: Atlas 3D - complejo duodeno-pancreático",day:"Lun",dayIdx:1,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p043",text:"PRÁCTICO 31: Video Drive + tabla relaciones páncreas",day:"Lun",dayIdx:1,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p044",text:"PRÁCTICO 32: Hígado - segmentación, pedículo, vías biliares",day:"Mar",dayIdx:2,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p045",text:"PRÁCTICO 32: Atlas 3D - hígado, segmentos Couinaud, vesícula",day:"Mar",dayIdx:2,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p046",text:"PRÁCTICO 32: Clase Drive + vías biliares + repaso P28-30",day:"Mar",dayIdx:2,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p047",text:"PRÁCTICO 33: Intestino delgado y grueso - Guía + Latarjet",day:"Mié",dayIdx:3,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p048",text:"PRÁCTICO 33: Atlas 3D - intestinos, porciones colon",day:"Mié",dayIdx:3,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p049",text:"PRÁCTICO 33: Video Drive + tabla intestino delgado vs grueso",day:"Mié",dayIdx:3,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p050",text:"PRÁCTICO 34: Retroperitoneo - riñones, uréteres, grandes vasos",day:"Jue",dayIdx:4,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p051",text:"PRÁCTICO 34: Atlas 3D - retroperitoneo, aorta, cava",day:"Jue",dayIdx:4,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p052",text:"PRÁCTICO 34: Clase Drive + ramas de aorta abdominal",day:"Jue",dayIdx:4,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p053",text:"REPASO INTEGRADOR: Prácticos 28-34 - abdomen completo",day:"Vie",dayIdx:5,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p054",text:"REPASO ACTIVO: Atlas 3D abdomen completo - cortes axiales",day:"Vie",dayIdx:5,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p055",text:"REFUERZO: Puntos débiles abdomen + irrigación completa",day:"Vie",dayIdx:5,hora:"15:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p056",text:"PRÁCTICO 35: Pelvis + Periné masculino - Guía + Latarjet",day:"Lun",dayIdx:1,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p057",text:"PRÁCTICO 35: Atlas 3D - pelvis masculina, próstata, genitales",day:"Lun",dayIdx:1,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p058",text:"PRÁCTICO 35: Clase Drive + cortes sagitales pelvis masculina",day:"Lun",dayIdx:1,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p059",text:"PRÁCTICO 36: Pelvis femenina + Periné - Guía + Latarjet",day:"Mar",dayIdx:2,hora:"09:00",color:"#C4855A",fromPlan:true},
-    {id:"p060",text:"PRÁCTICO 36: Atlas 3D - pelvis femenina, ligamentos uterinos",day:"Mar",dayIdx:2,hora:"11:00",color:"#C4855A",fromPlan:true},
-    {id:"p061",text:"PRÁCTICO 36: Video Drive + tabla pelvis masculina vs femenina",day:"Mar",dayIdx:2,hora:"15:00",color:"#C4855A",fromPlan:true},
-    {id:"p062",text:"REPASO INTEGRADOR: Prácticos 35-36 - pelvis completa",day:"Mié",dayIdx:3,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p063",text:"REPASO GENERAL: Prácticos 20-24 cabeza/cuello + flashcards",day:"Mié",dayIdx:3,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p064",text:"REPASO GENERAL: Prácticos 25-27 tórax + esquemas",day:"Mié",dayIdx:3,hora:"15:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p065",text:"REPASO GENERAL: Prácticos 28-31 abdomen superior",day:"Jue",dayIdx:4,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p066",text:"REPASO GENERAL: Prácticos 32-34 abdomen inferior + irrigación",day:"Jue",dayIdx:4,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p067",text:"REPASO GENERAL: Prácticos 35-36 pelvis - diferencias M/F",day:"Jue",dayIdx:4,hora:"15:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p068",text:"AUTOEVALUACIÓN: Simulacro 1 - 30 estructuras aleatorias Atlas 3D",day:"Vie",dayIdx:5,hora:"09:00",color:"#B85C4A",fromPlan:true},
-    {id:"p069",text:"ANÁLISIS DE ERRORES: Lista de puntos débiles por región",day:"Vie",dayIdx:5,hora:"11:00",color:"#B85C4A",fromPlan:true},
-    {id:"p070",text:"REFUERZO PERSONALIZADO: Top 10 estructuras difíciles",day:"Vie",dayIdx:5,hora:"15:00",color:"#B85C4A",fromPlan:true},
-    {id:"p071",text:"DRILLING CABEZA Y CUELLO: P20-24 - relaciones vasculonerviosas",day:"Lun",dayIdx:1,hora:"09:00",color:"#B85C4A",fromPlan:true},
-    {id:"p072",text:"DRILLING TÓRAX: P25-27 - mediastino, corazón, pulmones",day:"Lun",dayIdx:1,hora:"11:00",color:"#B85C4A",fromPlan:true},
-    {id:"p073",text:"SIMULACRO 2: 20 estructuras cabeza/cuello/tórax - Atlas 3D",day:"Lun",dayIdx:1,hora:"15:00",color:"#B85C4A",fromPlan:true},
-    {id:"p074",text:"DRILLING ABDOMEN SUPERIOR: P28-32 - peritoneo, irrigación",day:"Mar",dayIdx:2,hora:"09:00",color:"#B85C4A",fromPlan:true},
-    {id:"p075",text:"DRILLING ABDOMEN INFERIOR: P33-34 - intestinos, retroperitoneo",day:"Mar",dayIdx:2,hora:"11:00",color:"#B85C4A",fromPlan:true},
-    {id:"p076",text:"SIMULACRO 3: 25 estructuras abdomen completo",day:"Mar",dayIdx:2,hora:"15:00",color:"#B85C4A",fromPlan:true},
-    {id:"p077",text:"DRILLING PELVIS: P35-36 - ambos sexos, periné, fascias",day:"Mié",dayIdx:3,hora:"09:00",color:"#B85C4A",fromPlan:true},
-    {id:"p078",text:"REPASO TRANSVERSAL: Irrigación completa - árbol vascular",day:"Mié",dayIdx:3,hora:"11:00",color:"#B85C4A",fromPlan:true},
-    {id:"p079",text:"REPASO TRANSVERSAL: Inervación completa - pares craneales, plexos",day:"Mié",dayIdx:3,hora:"15:00",color:"#B85C4A",fromPlan:true},
-    {id:"p080",text:"SIMULACRO COMPLETO 4: 40 estructuras TODOS los prácticos",day:"Jue",dayIdx:4,hora:"09:00",color:"#B85C4A",fromPlan:true},
-    {id:"p081",text:"CORRECCIÓN SIMULACRO 4: Análisis detallado de errores",day:"Jue",dayIdx:4,hora:"11:00",color:"#B85C4A",fromPlan:true},
-    {id:"p082",text:"REFUERZO FINAL: Trabajar temas con más errores",day:"Jue",dayIdx:4,hora:"15:00",color:"#B85C4A",fromPlan:true},
-    {id:"p083",text:"REPASO EXPRESS: Prácticos 20-27 cabeza, cuello, tórax",day:"Vie",dayIdx:5,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p084",text:"REPASO EXPRESS: Prácticos 28-36 abdomen y pelvis",day:"Vie",dayIdx:5,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p085",text:"SIMULACRO COMPLETO 5: 50 estructuras - cronometrado",day:"Vie",dayIdx:5,hora:"15:00",color:"#B85C4A",fromPlan:true},
-    {id:"p086",text:"CORRECCIÓN SIMULACRO 5: Lista de estructuras críticas",day:"Lun",dayIdx:1,hora:"09:00",color:"#B85C4A",fromPlan:true},
-    {id:"p087",text:"ULTRA-REFUERZO: Solo estructuras críticas - repetición espaciada",day:"Lun",dayIdx:1,hora:"11:00",color:"#B85C4A",fromPlan:true},
-    {id:"p088",text:"REPASO ACTIVO: Explicar en voz alta 5 temas complejos",day:"Lun",dayIdx:1,hora:"15:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p089",text:"REPASO INTEGRADOR FINAL: Atlas 3D todas las regiones",day:"Mar",dayIdx:2,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p090",text:"REPASO DE RELACIONES: Mediastino, espacios perifaríngeos, retroperitoneo",day:"Mar",dayIdx:2,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p091",text:"SIMULACRO FINAL 6: 50 estructuras - último test completo",day:"Mar",dayIdx:2,hora:"15:00",color:"#B85C4A",fromPlan:true},
-    {id:"p092",text:"CORRECCIÓN SIMULACRO 6: Pulir últimos detalles",day:"Mié",dayIdx:3,hora:"09:00",color:"#B85C4A",fromPlan:true},
-    {id:"p093",text:"REPASO VISUAL: Solo Atlas 3D - identificación pura",day:"Mié",dayIdx:3,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p094",text:"FLASHCARDS FINALES: Irrigación, inervación y relaciones clave",day:"Mié",dayIdx:3,hora:"15:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p095",text:"REPASO LIGERO: Prácticos 20-28 - lectura tranquila",day:"Jue",dayIdx:4,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p096",text:"REPASO LIGERO: Prácticos 29-36 - Atlas 3D relajado",day:"Jue",dayIdx:4,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p097",text:"MINI-SIMULACRO: 20 estructuras rápidas - mantener agilidad",day:"Jue",dayIdx:4,hora:"15:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p098",text:"REPASO MUY LIGERO: Recorrer mentalmente cada región",day:"Vie",dayIdx:5,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p099",text:"ÚLTIMAS FLASHCARDS: 20 estructuras más difíciles",day:"Vie",dayIdx:5,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p100",text:"MENTALIZACIÓN: Visualización positiva del examen 💪",day:"Vie",dayIdx:5,hora:"15:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p101",text:"REPASO EXPRESS FINAL: Solo esquemas y mapas conceptuales",day:"Sáb",dayIdx:6,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p102",text:"VISUALIZACIÓN ATLAS 3D: Recorrido rápido 4 regiones",day:"Sáb",dayIdx:6,hora:"11:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p103",text:"ÚLTIMA REVISIÓN: Lista estructuras críticas + relajación 🧘",day:"Sáb",dayIdx:6,hora:"15:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p104",text:"DESCANSO: Actividad relajante. Dormir temprano 🌙",day:"Sáb",dayIdx:6,hora:"19:00",color:"#5A8C6A",fromPlan:true},
-    {id:"p105",text:"🎯 DÍA DEL PARCIAL: Desayunar bien. Llegar 20min antes. ¡VAS A LOGRARLO! 💪🔥",day:"Dom",dayIdx:7,hora:"09:00",color:"#5A8C6A",fromPlan:true},
-  ]);
+  {id:"p001",text:"Preparación: Revisar cronograma, organizar materiales",fecha:"2026-05-19",hora:"08:00",color:"#7B68C8",fromPlan:true},
+  {id:"p002",text:"PRÁCTICO 20: Macizo facial + Fosas nasales - Guía + Latarjet",fecha:"2026-05-20",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p003",text:"PRÁCTICO 20: Atlas 3D - identificar estructuras",fecha:"2026-05-20",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p004",text:"PRÁCTICO 20: Ver clase Drive + resumen final",fecha:"2026-05-20",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p005",text:"PRÁCTICO 21: Faringe + Espacios perifaríngeos - Guía + Latarjet",fecha:"2026-05-21",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p006",text:"PRÁCTICO 21: Atlas 3D - faringe y espacios",fecha:"2026-05-21",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p007",text:"PRÁCTICO 21: Video Drive + autoevaluación + repaso P20",fecha:"2026-05-21",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p008",text:"PRÁCTICO 22: Aparato masticación + Glándulas salivales",fecha:"2026-05-22",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p009",text:"PRÁCTICO 22: Atlas 3D - músculos masticación, glándulas",fecha:"2026-05-22",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p010",text:"PRÁCTICO 22: Clase Drive + flashcards de músculos y glándulas",fecha:"2026-05-22",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p011",text:"PRÁCTICO 23: Región infrahioidea + PVN - Guía + Latarjet",fecha:"2026-05-23",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p012",text:"PRÁCTICO 23: Atlas 3D - paquete vasculonervioso cuello",fecha:"2026-05-23",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p013",text:"PRÁCTICO 23: Video Drive + repaso rápido P20-21",fecha:"2026-05-23",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p014",text:"PRÁCTICO 24: Laringe + Glándula tiroides - Guía + Latarjet",fecha:"2026-05-26",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p015",text:"PRÁCTICO 24: Atlas 3D - laringe, tiroides y paratiroides",fecha:"2026-05-26",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p016",text:"PRÁCTICO 24: Clase Drive + autoevaluación oral",fecha:"2026-05-26",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p017",text:"REPASO INTEGRADOR: Prácticos 20-24 - mapa conceptual",fecha:"2026-05-27",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p018",text:"REPASO ACTIVO: Atlas 3D cabeza/cuello completo",fecha:"2026-05-27",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p019",text:"REFUERZO: Puntos débiles cabeza/cuello + flashcards",fecha:"2026-05-27",hora:"15:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p020",text:"PRÁCTICO 25: Jaula torácica + Diafragma - Guía + Latarjet",fecha:"2026-05-29",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p021",text:"PRÁCTICO 25: Atlas 3D - jaula torácica y diafragma",fecha:"2026-05-29",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p022",text:"PRÁCTICO 25: Video Drive + tabla orificios diafragmáticos",fecha:"2026-05-29",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p023",text:"PRÁCTICO 26: Tráquea + Árbol bronquial + Pulmones",fecha:"2026-05-30",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p024",text:"PRÁCTICO 26: Atlas 3D - vías respiratorias y segmentos",fecha:"2026-05-30",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p025",text:"PRÁCTICO 26: Clase Drive + tabla pulmón derecho vs izquierdo",fecha:"2026-05-30",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p026",text:"PRÁCTICO 27: Mediastino y Corazón - Guía + Latarjet",fecha:"2026-06-02",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p027",text:"PRÁCTICO 27: Atlas 3D - corazón, grandes vasos, mediastino",fecha:"2026-06-02",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p028",text:"PRÁCTICO 27: Video Drive + recorrido de la sangre",fecha:"2026-06-02",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p029",text:"REPASO INTEGRADOR: Prácticos 25-27 - tórax completo",fecha:"2026-06-03",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p030",text:"REPASO ACTIVO: Atlas 3D tórax completo",fecha:"2026-06-03",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p031",text:"REFUERZO: Puntos débiles tórax + repaso cabeza/cuello",fecha:"2026-06-03",hora:"15:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p032",text:"PRÁCTICO 28: Pared abdominal + Conducto inguinal",fecha:"2026-06-04",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p033",text:"PRÁCTICO 28: Atlas 3D - capas pared abdominal",fecha:"2026-06-04",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p034",text:"PRÁCTICO 28: Clase Drive + tabla conducto inguinal",fecha:"2026-06-04",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p035",text:"PRÁCTICO 29: División abdomen + Peritoneo",fecha:"2026-06-05",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p036",text:"PRÁCTICO 29: Atlas 3D - cavidad peritoneal, mesos, omentos",fecha:"2026-06-05",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p037",text:"PRÁCTICO 29: Video Drive + mapa regiones abdominales",fecha:"2026-06-05",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p038",text:"PRÁCTICO 30: Estómago + Bazo - Guía + Latarjet",fecha:"2026-06-06",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p039",text:"PRÁCTICO 30: Atlas 3D - estómago, bazo, tronco celíaco",fecha:"2026-06-06",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p040",text:"PRÁCTICO 30: Clase Drive + autoevaluación estómago",fecha:"2026-06-06",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p041",text:"PRÁCTICO 31: Duodeno + Páncreas - Guía + Latarjet",fecha:"2026-06-09",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p042",text:"PRÁCTICO 31: Atlas 3D - complejo duodeno-pancreático",fecha:"2026-06-09",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p043",text:"PRÁCTICO 31: Video Drive + tabla relaciones páncreas",fecha:"2026-06-09",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p044",text:"PRÁCTICO 32: Hígado - segmentación, pedículo, vías biliares",fecha:"2026-06-10",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p045",text:"PRÁCTICO 32: Atlas 3D - hígado, segmentos Couinaud, vesícula",fecha:"2026-06-10",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p046",text:"PRÁCTICO 32: Clase Drive + vías biliares + repaso P28-30",fecha:"2026-06-10",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p047",text:"PRÁCTICO 33: Intestino delgado y grueso - Guía + Latarjet",fecha:"2026-06-11",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p048",text:"PRÁCTICO 33: Atlas 3D - intestinos, porciones colon",fecha:"2026-06-11",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p049",text:"PRÁCTICO 33: Video Drive + tabla intestino delgado vs grueso",fecha:"2026-06-11",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p050",text:"PRÁCTICO 34: Retroperitoneo - riñones, uréteres, grandes vasos",fecha:"2026-06-12",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p051",text:"PRÁCTICO 34: Atlas 3D - retroperitoneo, aorta, cava",fecha:"2026-06-12",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p052",text:"PRÁCTICO 34: Clase Drive + ramas de aorta abdominal",fecha:"2026-06-12",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p053",text:"REPASO INTEGRADOR: Prácticos 28-34 - abdomen completo",fecha:"2026-06-13",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p054",text:"REPASO ACTIVO: Atlas 3D abdomen completo - cortes axiales",fecha:"2026-06-13",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p055",text:"REFUERZO: Puntos débiles abdomen + irrigación completa",fecha:"2026-06-13",hora:"15:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p056",text:"PRÁCTICO 35: Pelvis + Periné masculino - Guía + Latarjet",fecha:"2026-06-16",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p057",text:"PRÁCTICO 35: Atlas 3D - pelvis masculina, próstata, genitales",fecha:"2026-06-16",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p058",text:"PRÁCTICO 35: Clase Drive + cortes sagitales pelvis masculina",fecha:"2026-06-16",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p059",text:"PRÁCTICO 36: Pelvis femenina + Periné - Guía + Latarjet",fecha:"2026-06-17",hora:"09:00",color:"#C4855A",fromPlan:true},
+  {id:"p060",text:"PRÁCTICO 36: Atlas 3D - pelvis femenina, ligamentos uterinos",fecha:"2026-06-17",hora:"11:00",color:"#C4855A",fromPlan:true},
+  {id:"p061",text:"PRÁCTICO 36: Video Drive + tabla pelvis masculina vs femenina",fecha:"2026-06-17",hora:"15:00",color:"#C4855A",fromPlan:true},
+  {id:"p062",text:"REPASO INTEGRADOR: Prácticos 35-36 - pelvis completa",fecha:"2026-06-18",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p063",text:"REPASO GENERAL: Prácticos 20-24 cabeza/cuello + flashcards",fecha:"2026-06-18",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p064",text:"REPASO GENERAL: Prácticos 25-27 tórax + esquemas",fecha:"2026-06-18",hora:"15:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p065",text:"REPASO GENERAL: Prácticos 28-31 abdomen superior",fecha:"2026-06-19",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p066",text:"REPASO GENERAL: Prácticos 32-34 abdomen inferior + irrigación",fecha:"2026-06-19",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p067",text:"REPASO GENERAL: Prácticos 35-36 pelvis - diferencias M/F",fecha:"2026-06-19",hora:"15:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p068",text:"AUTOEVALUACIÓN: Simulacro 1 - 30 estructuras aleatorias Atlas 3D",fecha:"2026-06-20",hora:"09:00",color:"#B85C4A",fromPlan:true},
+  {id:"p069",text:"ANÁLISIS DE ERRORES: Lista de puntos débiles por región",fecha:"2026-06-20",hora:"11:00",color:"#B85C4A",fromPlan:true},
+  {id:"p070",text:"REFUERZO PERSONALIZADO: Top 10 estructuras difíciles",fecha:"2026-06-20",hora:"15:00",color:"#B85C4A",fromPlan:true},
+  {id:"p071",text:"DRILLING CABEZA Y CUELLO: P20-24 - relaciones vasculonerviosas",fecha:"2026-06-23",hora:"09:00",color:"#B85C4A",fromPlan:true},
+  {id:"p072",text:"DRILLING TÓRAX: P25-27 - mediastino, corazón, pulmones",fecha:"2026-06-23",hora:"11:00",color:"#B85C4A",fromPlan:true},
+  {id:"p073",text:"SIMULACRO 2: 20 estructuras cabeza/cuello/tórax - Atlas 3D",fecha:"2026-06-23",hora:"15:00",color:"#B85C4A",fromPlan:true},
+  {id:"p074",text:"DRILLING ABDOMEN SUPERIOR: P28-32 - peritoneo, irrigación",fecha:"2026-06-24",hora:"09:00",color:"#B85C4A",fromPlan:true},
+  {id:"p075",text:"DRILLING ABDOMEN INFERIOR: P33-34 - intestinos, retroperitoneo",fecha:"2026-06-24",hora:"11:00",color:"#B85C4A",fromPlan:true},
+  {id:"p076",text:"SIMULACRO 3: 25 estructuras abdomen completo",fecha:"2026-06-24",hora:"15:00",color:"#B85C4A",fromPlan:true},
+  {id:"p077",text:"DRILLING PELVIS: P35-36 - ambos sexos, periné, fascias",fecha:"2026-06-25",hora:"09:00",color:"#B85C4A",fromPlan:true},
+  {id:"p078",text:"REPASO TRANSVERSAL: Irrigación completa - árbol vascular",fecha:"2026-06-25",hora:"11:00",color:"#B85C4A",fromPlan:true},
+  {id:"p079",text:"REPASO TRANSVERSAL: Inervación completa - pares craneales, plexos",fecha:"2026-06-25",hora:"15:00",color:"#B85C4A",fromPlan:true},
+  {id:"p080",text:"SIMULACRO COMPLETO 4: 40 estructuras TODOS los prácticos",fecha:"2026-06-26",hora:"09:00",color:"#B85C4A",fromPlan:true},
+  {id:"p081",text:"CORRECCIÓN SIMULACRO 4: Análisis detallado de errores",fecha:"2026-06-26",hora:"11:00",color:"#B85C4A",fromPlan:true},
+  {id:"p082",text:"REFUERZO FINAL: Trabajar temas con más errores",fecha:"2026-06-26",hora:"15:00",color:"#B85C4A",fromPlan:true},
+  {id:"p083",text:"REPASO EXPRESS: Prácticos 20-27 cabeza, cuello, tórax",fecha:"2026-06-27",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p084",text:"REPASO EXPRESS: Prácticos 28-36 abdomen y pelvis",fecha:"2026-06-27",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p085",text:"SIMULACRO COMPLETO 5: 50 estructuras - cronometrado",fecha:"2026-06-27",hora:"15:00",color:"#B85C4A",fromPlan:true},
+  {id:"p086",text:"CORRECCIÓN SIMULACRO 5: Lista de estructuras críticas",fecha:"2026-06-30",hora:"09:00",color:"#B85C4A",fromPlan:true},
+  {id:"p087",text:"ULTRA-REFUERZO: Solo estructuras críticas - repetición espaciada",fecha:"2026-06-30",hora:"11:00",color:"#B85C4A",fromPlan:true},
+  {id:"p088",text:"REPASO ACTIVO: Explicar en voz alta 5 temas complejos",fecha:"2026-06-30",hora:"15:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p089",text:"REPASO INTEGRADOR FINAL: Atlas 3D todas las regiones",fecha:"2026-07-01",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p090",text:"REPASO DE RELACIONES: Mediastino, espacios perifaríngeos, retroperitoneo",fecha:"2026-07-01",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p091",text:"SIMULACRO FINAL 6: 50 estructuras - último test completo",fecha:"2026-07-01",hora:"15:00",color:"#B85C4A",fromPlan:true},
+  {id:"p092",text:"CORRECCIÓN SIMULACRO 6: Pulir últimos detalles",fecha:"2026-07-02",hora:"09:00",color:"#B85C4A",fromPlan:true},
+  {id:"p093",text:"REPASO VISUAL: Solo Atlas 3D - identificación pura",fecha:"2026-07-02",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p094",text:"FLASHCARDS FINALES: Irrigación, inervación y relaciones clave",fecha:"2026-07-02",hora:"15:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p095",text:"REPASO LIGERO: Prácticos 20-28 - lectura tranquila",fecha:"2026-07-03",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p096",text:"REPASO LIGERO: Prácticos 29-36 - Atlas 3D relajado",fecha:"2026-07-03",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p097",text:"MINI-SIMULACRO: 20 estructuras rápidas - mantener agilidad",fecha:"2026-07-03",hora:"15:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p098",text:"REPASO MUY LIGERO: Recorrer mentalmente cada región",fecha:"2026-07-04",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p099",text:"ÚLTIMAS FLASHCARDS: 20 estructuras más difíciles",fecha:"2026-07-04",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p100",text:"MENTALIZACIÓN: Visualización positiva del examen 💪",fecha:"2026-07-04",hora:"15:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p101",text:"REPASO EXPRESS FINAL: Solo esquemas y mapas conceptuales",fecha:"2026-07-05",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p102",text:"VISUALIZACIÓN ATLAS 3D: Recorrido rápido 4 regiones",fecha:"2026-07-05",hora:"11:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p103",text:"ÚLTIMA REVISIÓN: Lista estructuras críticas + relajación 🧘",fecha:"2026-07-05",hora:"15:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p104",text:"DESCANSO: Actividad relajante. Dormir temprano 🌙",fecha:"2026-07-05",hora:"19:00",color:"#5A8C6A",fromPlan:true},
+  {id:"p105",text:"🎯 DÍA DEL PARCIAL: Desayunar bien. ¡VAS A LOGRARLO! 💪🔥",fecha:"2026-07-06",hora:"09:00",color:"#5A8C6A",fromPlan:true},
+]);
 
   return(
     <div style={{background:dark?"#1A1510":P.cream,minHeight:"100vh",fontFamily:"system-ui,sans-serif"}}>
